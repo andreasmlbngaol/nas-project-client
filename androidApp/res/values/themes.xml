@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.NasProject" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <!-- The app draws edge-to-edge and paints its own background. -->
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
+</resources>
