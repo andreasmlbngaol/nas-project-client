@@ -98,13 +98,28 @@ jobs:
       - name: Build installer
         shell: bash
         run: |
-          jpackage \
-            --type ${{ matrix.format }} \
-            --input build/tasks/_desktopApp_executableJarJvm \
-            --main-jar desktopApp-jvm-executable.jar \
-            --name nas-project \
-            --app-version 0.9.0 \
-            --dest dist
+          if [ "${{ matrix.format }}" = "dmg" ]; then
+            jpackage \
+              --type app-image \
+              --input build/tasks/_desktopApp_executableJarJvm \
+              --main-jar desktopApp-jvm-executable.jar \
+              --name nas-project \
+              --app-version 1.0.0 \
+              --dest dist
+            /usr/libexec/PlistBuddy \
+              -c "Set :CFBundleShortVersionString 0.9.0" \
+              dist/nas-project.app/Contents/Info.plist
+            hdiutil create -volname nas-project -srcfolder dist/nas-project.app -ov -format UDZO dist/nas-project-0.9.0.dmg
+            rm -rf dist/nas-project.app
+          else
+            jpackage \
+              --type ${{ matrix.format }} \
+              --input build/tasks/_desktopApp_executableJarJvm \
+              --main-jar desktopApp-jvm-executable.jar \
+              --name nas-project \
+              --app-version 0.9.0 \
+              --dest dist
+          fi
       - name: Archive app-image
         if: matrix.format == 'app-image'
         shell: bash
