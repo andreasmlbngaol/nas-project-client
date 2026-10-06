@@ -52,7 +52,7 @@ jobs:
         include:
           - name: Windows
             os: windows-latest
-            format: app-image
+            format: msi
           - name: Linux DEB
             os: ubuntu-latest
             format: deb
@@ -120,17 +120,11 @@ jobs:
           else
             case "${{ matrix.format }}" in
               deb|rpm) shortcut="--linux-shortcut --linux-menu-group Utility --icon androidApp/res/mipmap-xxxhdpi/ic_launcher.png" ;;
-              app-image) shortcut="--win-shortcut --win-menu" ;;
+              msi) shortcut="--win-shortcut --win-menu" ;;
               *) shortcut="" ;;
             esac
             jpackage --type ${{ matrix.format }} "${common[@]}" --app-version "$VERSION" $shortcut
           fi
-      - name: Archive app-image
-        if: matrix.format == 'app-image'
-        shell: bash
-        env:
-          VERSION: ${{ steps.version.outputs.value }}
-        run: tar -czf "dist/nas-project-$VERSION-windows.tar.gz" -C dist nas-project
       - uses: actions/upload-artifact@v4
         with:
           name: nas-project-desktop-${{ matrix.format }}
@@ -214,7 +208,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.value }}
         run: |
           mkdir -p release
-          find artifacts -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.dmg' -o -name '*.tar.gz' \) -exec cp {} release/ \;
+          find artifacts -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.dmg' -o -name '*.msi' \) -exec cp {} release/ \;
           cp "$(find artifacts -name '*.apk')" "release/nas-project-$VERSION.apk"
           cp "$(find artifacts -name '*.aab')" "release/nas-project-$VERSION.aab"
           ls -la release/
