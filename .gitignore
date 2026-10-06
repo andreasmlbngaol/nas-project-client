@@ -3,6 +3,10 @@
 build/
 .DS_Store
 captures
+*.keystore
+*.jks
+keystore.properties
+__pycache__/
 **/module.xcodeproj/*
 !**/module.xcodeproj/project.pbxproj
 !**/module.xcodeproj/xcshareddata/

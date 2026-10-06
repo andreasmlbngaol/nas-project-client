@@ -1,0 +1,156 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: Web (GitHub Pages)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/JetBrains/Kotlin
+            ~/.gradle
+          key: ${{ runner.os }}-web-${{ hashFiles('**/*.yaml', 'libs.versions.toml', 'kotlin') }}
+          restore-keys: ${{ runner.os }}-web-
+      - name: Build Wasm web app
+        run: ./kotlin build -m webApp -v release
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/tasks/_webApp_buildWasmJsAppWasmJsRelease
+      - name: Deploy to GitHub Pages
+        id: deploy
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: actions/deploy-pages@v4
+
+  desktop:
+    name: Desktop (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            format: app-image
+          - name: Linux DEB
+            os: ubuntu-latest
+            format: deb
+          - name: Linux RPM
+            os: ubuntu-latest
+            format: rpm
+          - name: macOS
+            os: macos-latest
+            format: dmg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/JetBrains/Kotlin
+            ~/Library/Caches/JetBrains/Kotlin
+            ~/AppData/Local/JetBrains/Kotlin
+            ~/.gradle
+          key: ${{ runner.os }}-${{ matrix.format }}-${{ hashFiles('**/*.yaml', 'libs.versions.toml', 'kotlin') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.format }}-
+      - name: Install packaging tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y fakeroot rpm
+      - name: Package desktop app
+        shell: bash
+        run: ./kotlin package -m desktopApp -f executable-jar
+      - name: Patch executable jar
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            Linux) cache=~/.cache/JetBrains/Kotlin/.m2.cache ;;
+            macOS) cache=~/Library/Caches/JetBrains/Kotlin/.m2.cache ;;
+            Windows) cache="$LOCALAPPDATA/JetBrains/Kotlin/.m2.cache" ;;
+          esac
+          python scripts/patch-executable-jar.py build/tasks/_desktopApp_executableJarJvm/desktopApp-jvm-executable.jar "$cache"
+      - name: Build installer
+        shell: bash
+        run: |
+          jpackage \
+            --type ${{ matrix.format }} \
+            --input build/tasks/_desktopApp_executableJarJvm \
+            --main-jar desktopApp-jvm-executable.jar \
+            --name nas-project \
+            --app-version 1.0.0 \
+            --dest dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nas-project-desktop-${{ matrix.format }}
+          path: dist
+          if-no-files-found: error
+
+  android:
+    name: Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/JetBrains/Kotlin
+            ~/.gradle
+          key: ${{ runner.os }}-android-${{ hashFiles('**/*.yaml', 'libs.versions.toml', 'kotlin') }}
+          restore-keys: ${{ runner.os }}-android-
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+      - name: Configure signing
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > androidApp/release.keystore
+          cat > androidApp/keystore.properties <<EOF
+          storeFile=release.keystore
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          EOF
+          cat >> androidApp/module.yaml <<'EOF'
+              signing:
+                enabled: true
+                propertiesFile: keystore.properties
+          EOF
+      - name: Build release APK
+        run: ./kotlin build -m androidApp -v release
+      - name: Build release AAB
+        run: ./kotlin package -m androidApp -f aab
+      - name: Remove signing secrets
+        if: always()
+        run: rm -f androidApp/release.keystore androidApp/keystore.properties
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nas-project-android
+          path: |
+            build/tasks/_androidApp_buildAndroidRelease/gradle-project-release*.apk
+            build/tasks/_androidApp_bundleAndroid/gradle-project-release.aab
+          if-no-files-found: error
