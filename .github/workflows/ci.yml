@@ -190,12 +190,8 @@ jobs:
       - name: Collect release files
         run: |
           mkdir -p release
-          cp artifacts/nas-project-desktop-deb/*.deb release/
-          cp artifacts/nas-project-desktop-rpm/*.rpm release/
-          cp artifacts/nas-project-desktop-dmg/*.dmg release/
-          cp artifacts/nas-project-desktop-app-image/*.tar.gz release/
-          cp artifacts/nas-project-android/*.apk release/
-          cp artifacts/nas-project-android/*.aab release/
+          find artifacts -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.dmg' -o -name '*.tar.gz' -o -name '*.apk' -o -name '*.aab' \) -exec cp {} release/ \;
+          ls -la release/
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
