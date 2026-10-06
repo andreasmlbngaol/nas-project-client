@@ -80,6 +80,10 @@ jobs:
             ~/.gradle
           key: ${{ runner.os }}-${{ matrix.format }}-${{ hashFiles('**/*.yaml', 'libs.versions.toml', 'kotlin') }}
           restore-keys: ${{ runner.os }}-${{ matrix.format }}-
+      - name: Read version
+        id: version
+        shell: bash
+        run: echo "value=$(cat VERSION)" >> "$GITHUB_OUTPUT"
       - name: Install packaging tools
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y fakeroot rpm
@@ -97,33 +101,36 @@ jobs:
           python scripts/patch-executable-jar.py build/tasks/_desktopApp_executableJarJvm/desktopApp-jvm-executable.jar "$cache"
       - name: Build installer
         shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
         run: |
+          common=(
+            --input build/tasks/_desktopApp_executableJarJvm
+            --main-jar desktopApp-jvm-executable.jar
+            --name nas-project
+            --description "NAS Project client"
+            --vendor andreasmlbngaol
+            --dest dist
+          )
           if [ "${{ matrix.format }}" = "dmg" ]; then
-            jpackage \
-              --type app-image \
-              --input build/tasks/_desktopApp_executableJarJvm \
-              --main-jar desktopApp-jvm-executable.jar \
-              --name nas-project \
-              --app-version 1.0.0 \
-              --dest dist
-            /usr/libexec/PlistBuddy \
-              -c "Set :CFBundleShortVersionString 0.9.0" \
-              dist/nas-project.app/Contents/Info.plist
-            hdiutil create -volname nas-project -srcfolder dist/nas-project.app -ov -format UDZO dist/nas-project-0.9.0.dmg
+            jpackage --type app-image "${common[@]}" --app-version 1.0.0
+            /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" dist/nas-project.app/Contents/Info.plist
+            hdiutil create -volname nas-project -srcfolder dist/nas-project.app -ov -format UDZO "dist/nas-project-$VERSION.dmg"
             rm -rf dist/nas-project.app
           else
-            jpackage \
-              --type ${{ matrix.format }} \
-              --input build/tasks/_desktopApp_executableJarJvm \
-              --main-jar desktopApp-jvm-executable.jar \
-              --name nas-project \
-              --app-version 0.9.0 \
-              --dest dist
+            case "${{ matrix.format }}" in
+              deb|rpm) shortcut="--linux-shortcut --linux-menu-group Utility --icon androidApp/res/mipmap-xxxhdpi/ic_launcher.png" ;;
+              app-image) shortcut="--win-shortcut --win-menu" ;;
+              *) shortcut="" ;;
+            esac
+            jpackage --type ${{ matrix.format }} "${common[@]}" --app-version "$VERSION" $shortcut
           fi
       - name: Archive app-image
         if: matrix.format == 'app-image'
         shell: bash
-        run: tar -czf dist/nas-project-0.9.0-windows.tar.gz -C dist nas-project
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: tar -czf "dist/nas-project-$VERSION-windows.tar.gz" -C dist nas-project
       - uses: actions/upload-artifact@v4
         with:
           name: nas-project-desktop-${{ matrix.format }}
@@ -144,6 +151,17 @@ jobs:
             ~/.gradle
           key: ${{ runner.os }}-android-${{ hashFiles('**/*.yaml', 'libs.versions.toml', 'kotlin') }}
           restore-keys: ${{ runner.os }}-android-
+      - name: Read version
+        id: version
+        run: |
+          version=$(cat VERSION)
+          code=$(awk -F. '{print $1*10000 + $2*100 + $3}' VERSION)
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+      - name: Set app version
+        run: |
+          sed -i "s|^    versionName:.*|    versionName: \"${{ steps.version.outputs.value }}\"|" androidApp/module.yaml
+          sed -i "s|^    versionCode:.*|    versionCode: ${{ steps.version.outputs.code }}|" androidApp/module.yaml
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
       - name: Configure signing
@@ -184,22 +202,29 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+      - name: Read version
+        id: version
+        run: echo "value=$(cat VERSION)" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
       - name: Collect release files
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
         run: |
           mkdir -p release
           find artifacts -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.dmg' -o -name '*.tar.gz' \) -exec cp {} release/ \;
-          cp "$(find artifacts -name '*.apk')" release/nas-project-0.9.0.apk
-          cp "$(find artifacts -name '*.aab')" release/nas-project-0.9.0.aab
+          cp "$(find artifacts -name '*.apk')" "release/nas-project-$VERSION.apk"
+          cp "$(find artifacts -name '*.aab')" "release/nas-project-$VERSION.aab"
           ls -la release/
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.version.outputs.value }}
         run: |
-          gh release delete v0.9.0 --yes --cleanup-tag || true
-          gh release create v0.9.0 release/* \
-            --title "v0.9.0" \
-            --notes "Automated build of version 0.9.0."
+          gh release delete "v$VERSION" --yes --cleanup-tag || true
+          gh release create "v$VERSION" release/* \
+            --title "v$VERSION" \
+            --notes "Automated build of version $VERSION."
