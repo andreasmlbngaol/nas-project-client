@@ -123,7 +123,7 @@ jobs:
       - name: Archive app-image
         if: matrix.format == 'app-image'
         shell: bash
-        run: tar -czf dist/nas-project-windows.tar.gz -C dist nas-project
+        run: tar -czf dist/nas-project-0.9.0-windows.tar.gz -C dist nas-project
       - uses: actions/upload-artifact@v4
         with:
           name: nas-project-desktop-${{ matrix.format }}
@@ -190,7 +190,9 @@ jobs:
       - name: Collect release files
         run: |
           mkdir -p release
-          find artifacts -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.dmg' -o -name '*.tar.gz' -o -name '*.apk' -o -name '*.aab' \) -exec cp {} release/ \;
+          find artifacts -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.dmg' -o -name '*.tar.gz' \) -exec cp {} release/ \;
+          cp "$(find artifacts -name '*.apk')" release/nas-project-0.9.0.apk
+          cp "$(find artifacts -name '*.aab')" release/nas-project-0.9.0.aab
           ls -la release/
       - name: Publish release
         env:
