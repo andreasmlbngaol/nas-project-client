@@ -103,8 +103,12 @@ jobs:
             --input build/tasks/_desktopApp_executableJarJvm \
             --main-jar desktopApp-jvm-executable.jar \
             --name nas-project \
-            --app-version 1.0.0 \
+            --app-version 0.9.0 \
             --dest dist
+      - name: Archive app-image
+        if: matrix.format == 'app-image'
+        shell: bash
+        run: tar -czf dist/nas-project-windows.tar.gz -C dist nas-project
       - uses: actions/upload-artifact@v4
         with:
           name: nas-project-desktop-${{ matrix.format }}
@@ -156,3 +160,32 @@ jobs:
             build/tasks/_androidApp_buildAndroidRelease/gradle-project-release*.apk
             build/tasks/_androidApp_bundleAndroid/gradle-project-release.aab
           if-no-files-found: error
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: [web, desktop, android]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Collect release files
+        run: |
+          mkdir -p release
+          cp artifacts/nas-project-desktop-deb/*.deb release/
+          cp artifacts/nas-project-desktop-rpm/*.rpm release/
+          cp artifacts/nas-project-desktop-dmg/*.dmg release/
+          cp artifacts/nas-project-desktop-app-image/*.tar.gz release/
+          cp artifacts/nas-project-android/*.apk release/
+          cp artifacts/nas-project-android/*.aab release/
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete v0.9.0 --yes --cleanup-tag || true
+          gh release create v0.9.0 release/* \
+            --title "v0.9.0" \
+            --notes "Automated build of version 0.9.0."
